@@ -1,0 +1,7 @@
+*.log
+*.zip
+*.sql
+*.local.cmd
+*.local.ps1
+.env
+__pycache__/
