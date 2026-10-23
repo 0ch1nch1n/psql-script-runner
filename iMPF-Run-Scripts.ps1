@@ -4,6 +4,43 @@
 
 $ErrorActionPreference = 'Stop'
 
+$script:RunnerVersion = '5.2'
+$script:DiagnosticWriter = $null
+$script:DiagnosticPath = $null
+
+function Initialize-RunnerDiagnostics {
+    # Local storage remains available when the console or a network SQL folder stalls.
+    $roots = @($env:LOCALAPPDATA, [IO.Path]::GetTempPath())
+    foreach ($root in $roots) {
+        if ([string]::IsNullOrWhiteSpace($root)) { continue }
+        try {
+            $directory = Join-Path $root 'iMPF\Logs'
+            [void][IO.Directory]::CreateDirectory($directory)
+            $name = 'iMPF_Startup_{0}_{1}.log' -f (Get-Date -Format 'yyyyMMdd_HHmmss_fff'), $PID
+            $path = Join-Path $directory $name
+            $encoding = New-Object System.Text.UTF8Encoding($true)
+            $script:DiagnosticWriter = New-Object System.IO.StreamWriter($path, $false, $encoding)
+            $script:DiagnosticWriter.AutoFlush = $true
+            $script:DiagnosticPath = $path
+            return
+        }
+        catch { $script:DiagnosticWriter = $null }
+    }
+    throw 'Could not create the local startup log in LOCALAPPDATA or TEMP.'
+}
+
+function Write-RunnerStage {
+    param([Parameter(Mandatory = $true)][string]$Stage)
+    # Never pass a password, credential object or arbitrary environment values here.
+    if ($null -ne $script:DiagnosticWriter) {
+        $script:DiagnosticWriter.WriteLine(('{0} {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'), $Stage))
+    }
+}
+
+Initialize-RunnerDiagnostics
+Write-RunnerStage ("START version={0}; pid={1}; PowerShell={2}; apartment={3}" -f $script:RunnerVersion, $PID, $PSVersionTable.PSVersion, [Threading.Thread]::CurrentThread.GetApartmentState())
+Write-RunnerStage ("SCRIPT {0}" -f $PSCommandPath)
+
 $PsqlExe = $env:PG_PSQL_EXE
 $DbHost  = $env:PG_HOST
 $DbPort  = $env:PG_PORT
@@ -11,13 +48,94 @@ $DbName  = $env:PG_DATABASE
 $DbUser  = $env:PG_USERNAME
 $ConfiguredPassword = $env:PG_PASSWORD
 
+Write-RunnerStage 'UI_ASSEMBLIES loading'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+Write-RunnerStage 'UI_ASSEMBLIES ready'
 
 $script:RunReportWriter = $null
 $script:RunReportPath = $null
 $script:RunReportFinalized = $false
 $script:RunStartedAt = Get-Date
+
+function Get-RunnerCredential {
+    param([Parameter(Mandatory = $true)][string]$UserName)
+
+    # Avoid ConsoleHost's native Get-Credential prompt after WinForms dialogs.
+    Write-RunnerStage 'PASSWORD_DIALOG creating WinForms controls'
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "iMPF v$script:RunnerVersion - PostgreSQL password"
+    $form.StartPosition = 'CenterScreen'
+    $form.ClientSize = New-Object System.Drawing.Size(490, 200)
+    $form.FormBorderStyle = 'FixedDialog'
+    $form.MaximizeBox = $false
+    $form.MinimizeBox = $false
+    $form.TopMost = $true
+
+    $label = New-Object System.Windows.Forms.Label
+    $label.Text = "PostgreSQL user: $UserName`r`nEnter the password. It will not be saved to the logs."
+    $label.Location = New-Object System.Drawing.Point(18, 15)
+    $label.Size = New-Object System.Drawing.Size(455, 45)
+    $form.Controls.Add($label)
+
+    $passwordBox = New-Object System.Windows.Forms.TextBox
+    $passwordBox.Location = New-Object System.Drawing.Point(20, 68)
+    $passwordBox.Size = New-Object System.Drawing.Size(450, 25)
+    $passwordBox.UseSystemPasswordChar = $true
+    $form.Controls.Add($passwordBox)
+
+    $validationLabel = New-Object System.Windows.Forms.Label
+    $validationLabel.Location = New-Object System.Drawing.Point(20, 101)
+    $validationLabel.Size = New-Object System.Drawing.Size(450, 23)
+    $validationLabel.ForeColor = [System.Drawing.Color]::Red
+    $form.Controls.Add($validationLabel)
+
+    $ok = New-Object System.Windows.Forms.Button
+    $ok.Text = 'Continue'
+    $ok.Location = New-Object System.Drawing.Point(263, 146)
+    $ok.Size = New-Object System.Drawing.Size(100, 32)
+    $ok.Add_Click({
+        if ($passwordBox.TextLength -eq 0) {
+            $validationLabel.Text = 'Enter a password, or choose Cancel.'
+            [void]$passwordBox.Focus()
+            return
+        }
+        $form.DialogResult = [System.Windows.Forms.DialogResult]::OK
+        $form.Close()
+    })
+    $form.Controls.Add($ok)
+    $form.AcceptButton = $ok
+
+    $cancel = New-Object System.Windows.Forms.Button
+    $cancel.Text = 'Cancel'
+    $cancel.Location = New-Object System.Drawing.Point(373, 146)
+    $cancel.Size = New-Object System.Drawing.Size(100, 32)
+    $cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $form.Controls.Add($cancel)
+    $form.CancelButton = $cancel
+    $form.Add_Shown({ [void]$passwordBox.Focus() })
+
+    $securePassword = $null
+    try {
+        Write-RunnerStage 'PASSWORD_DIALOG showing WinForms password prompt'
+        $result = $form.ShowDialog()
+        Write-RunnerStage ("PASSWORD_DIALOG returned {0}" -f $result)
+        if ($result -ne [System.Windows.Forms.DialogResult]::OK) { return $null }
+        Write-RunnerStage 'PASSWORD_DIALOG preparing in-memory credential'
+        $securePassword = ConvertTo-SecureString -String $passwordBox.Text -AsPlainText -Force
+        return (New-Object System.Management.Automation.PSCredential($UserName, $securePassword))
+    }
+    catch {
+        if ($null -ne $securePassword) { $securePassword.Dispose() }
+        throw
+    }
+    finally {
+        Write-RunnerStage 'PASSWORD_DIALOG clearing controls'
+        $passwordBox.Clear()
+        $form.Dispose()
+        Write-RunnerStage 'PASSWORD_DIALOG disposed'
+    }
+}
 
 function Show-RunnerMessage {
     param(
@@ -52,6 +170,8 @@ function Initialize-RunReport {
 
     Write-RunReport ('=' * 78)
     Write-RunReport 'POSTGRESQL MULTI-SCRIPT EXECUTION REPORT'
+    Write-RunReport ("Runner version:    {0}" -f $script:RunnerVersion)
+    Write-RunReport ("Local diagnostics: {0}" -f $script:DiagnosticPath)
     Write-RunReport ('=' * 78)
     Write-RunReport ("Run started:       {0}" -f $script:RunStartedAt.ToString('yyyy-MM-dd HH:mm:ss'))
     Write-RunReport ("Runner file:       {0}" -f $env:PG_RUNNER_SELF)
@@ -273,6 +393,7 @@ function Edit-ScriptExecutionOrder {
 }
 
 function Invoke-ConnectionPrecheck {
+    Write-RunnerStage 'PRECHECK entered; about to write console status'
     $marker = '__PG_RUNNER_PREFLIGHT__'
     $query = "SELECT '$marker|' || current_database() || '|' || current_user || '|' || COALESCE(inet_server_addr()::text, 'local') || '|' || COALESCE(inet_server_port()::text, 'local') || '|' || current_setting('server_version');"
     $arguments = @(
@@ -292,6 +413,7 @@ function Invoke-ConnectionPrecheck {
 
     Write-Host ''
     Write-Host 'Running read-only connection precheck...' -ForegroundColor Cyan
+    Write-RunnerStage 'PRECHECK console status written'
     Write-RunReport ''
     Write-RunReport '[CONNECTION PRECHECK]'
     Write-RunReport ("Started: {0}" -f (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))
@@ -321,7 +443,9 @@ function Invoke-ConnectionPrecheck {
     $nextProgress = 5
     Write-RunReport 'Limits: connect=10 seconds per address; total precheck=30 seconds.'
     try {
+        Write-RunnerStage 'PRECHECK starting psql process'
         $started = $process.Start()
+        Write-RunnerStage 'PRECHECK psql process started'
         if (-not $started) { throw 'Could not start psql for the connection precheck.' }
         $process.StandardInput.Close()
         # Drain both pipes concurrently, even if psql produces many error lines.
@@ -329,11 +453,13 @@ function Invoke-ConnectionPrecheck {
         $stderrTask = $process.StandardError.ReadToEndAsync()
         while (-not ($process.HasExited -and $stdoutTask.IsCompleted -and $stderrTask.IsCompleted)) {
             if ($timer.Elapsed.TotalSeconds -ge $timeoutSeconds) {
+                Write-RunnerStage 'PRECHECK TIMEOUT after 30 seconds'
                 Write-RunReport 'Result: TIMEOUT (30 seconds). No selected SQL script was started.'
                 throw 'Connection precheck timed out after 30 seconds. No selected SQL script was started. Check network/VPN, DNS, database reachability and authentication; then retry.'
             }
             if ($timer.Elapsed.TotalSeconds -ge $nextProgress) {
                 $progressText = 'Connection precheck still running ({0}s / 30s)...' -f [int]$timer.Elapsed.TotalSeconds
+                Write-RunnerStage $progressText
                 Write-Host $progressText -ForegroundColor Yellow
                 Write-RunReport $progressText
                 $nextProgress += 5
@@ -342,6 +468,7 @@ function Invoke-ConnectionPrecheck {
             Start-Sleep -Milliseconds 100
         }
         $exitCode = $process.ExitCode
+        Write-RunnerStage ("PRECHECK psql exited code={0}" -f $exitCode)
         $stdout = $stdoutTask.GetAwaiter().GetResult()
         $stderr = $stderrTask.GetAwaiter().GetResult()
         $output = @(($stdout + "`n" + $stderr) -split '\r?\n' | Where-Object { $_.Length -gt 0 })
@@ -486,6 +613,12 @@ function Invoke-PsqlScript {
 $passwordSetByRunner = $false
 
 try {
+    Write-RunnerStage 'STARTUP writing console banner'
+    $Host.UI.RawUI.WindowTitle = "PostgreSQL Multi-Script Change Runner v$script:RunnerVersion"
+    Write-Host "iMPF Script Runner v$script:RunnerVersion" -ForegroundColor Cyan
+    Write-Host ("Script: {0}" -f $PSCommandPath)
+    Write-Host ("Local diagnostics: {0}" -f $script:DiagnosticPath)
+    Write-RunnerStage 'STARTUP console banner written; validating settings'
     $requiredSettings = [ordered]@{
         PG_PSQL_EXE = $PsqlExe
         PG_HOST = $DbHost
@@ -506,16 +639,22 @@ try {
     }
 
     $startDirectory = Split-Path -Parent $env:PG_RUNNER_SELF
+    Write-RunnerStage 'BACKUP_SELECTION opening'
     $backupSql = Select-BackupScript -InitialDirectory $startDirectory
+    Write-RunnerStage 'BACKUP_SELECTION returned'
     if ([string]::IsNullOrWhiteSpace($backupSql)) {
         exit 2
     }
 
+    Write-RunnerStage 'CUSTOMER_SELECTION opening'
     $selectedScripts = @(Select-CustomerScripts -InitialDirectory (Split-Path -Parent $backupSql))
+    Write-RunnerStage 'CUSTOMER_SELECTION returned'
     if ($selectedScripts.Count -eq 0) {
         exit 2
     }
+    Write-RunnerStage 'SCRIPT_ORDER opening'
     $customerScripts = @(Edit-ScriptExecutionOrder -InitialScripts $selectedScripts -InitialDirectory (Split-Path -Parent $backupSql))
+    Write-RunnerStage 'SCRIPT_ORDER returned'
     if ($customerScripts.Count -eq 0) {
         exit 2
     }
@@ -541,7 +680,9 @@ try {
     $reportDirectory = Split-Path -Parent ([IO.Path]::GetFullPath($backupSql))
     $reportName = 'PostgreSQL_Run_{0}.log' -f (Get-Date -Format 'yyyyMMdd_HHmmss_fff')
     $reportPath = Join-Path $reportDirectory $reportName
+    Write-RunnerStage 'REPORT creating report beside backup SQL'
     Initialize-RunReport -Path $reportPath
+    Write-RunnerStage 'REPORT created; writing execution order'
     Write-RunReport ''
     Write-RunReport '[PLANNED EXECUTION ORDER]'
     Write-RunReport ("1. BACKUP   {0}" -f $backupSql)
@@ -549,21 +690,34 @@ try {
         Write-RunReport ("{0}. CUSTOMER {1}" -f ($i + 2), $customerScripts[$i])
     }
 
+    Write-RunnerStage 'PASSWORD preparing credential source'
     if (-not [string]::IsNullOrWhiteSpace($ConfiguredPassword)) {
+        Write-RunnerStage 'PASSWORD using CMD configuration'
         $env:PGPASSWORD = $ConfiguredPassword
         $passwordSetByRunner = $true
     }
     elseif ([string]::IsNullOrWhiteSpace($env:PGPASSWORD)) {
-        $credential = Get-Credential -UserName $DbUser -Message "Enter the PostgreSQL password for $DbUser. The password is kept only for this CMD process."
+        $credential = Get-RunnerCredential -UserName $DbUser
         if ($null -eq $credential) {
+            Write-RunnerStage 'PASSWORD cancelled; selected SQL scripts will not start'
             Complete-RunReport -Status 'CANCELLED' -Details 'Password entry was cancelled.'
             exit 2
         }
-        $env:PGPASSWORD = $credential.GetNetworkCredential().Password
-        $passwordSetByRunner = $true
+        try {
+            Write-RunnerStage 'PASSWORD copying credential to psql process environment'
+            $env:PGPASSWORD = $credential.GetNetworkCredential().Password
+            $passwordSetByRunner = $true
+        }
+        finally {
+            $credential.Password.Dispose()
+            $credential = $null
+        }
     }
+    else { Write-RunnerStage 'PASSWORD using inherited process environment' }
 
+    Write-RunnerStage 'PASSWORD ready; calling connection precheck'
     $precheck = Invoke-ConnectionPrecheck
+    Write-RunnerStage 'PRECHECK passed; building execution overview'
 
     $orderLines = New-Object System.Collections.Generic.List[string]
     [void]$orderLines.Add("  1. BACKUP   $backupSql")
@@ -597,6 +751,7 @@ Execution stops immediately if any script fails.
 Continue?
 "@
 
+    Write-RunnerStage 'OVERVIEW showing confirmation; selected SQL scripts have not started'
     $answer = [System.Windows.Forms.MessageBox]::Show(
         $confirmation,
         'Precheck passed - confirm database execution',
@@ -604,6 +759,7 @@ Continue?
         [System.Windows.Forms.MessageBoxIcon]::Warning,
         [System.Windows.Forms.MessageBoxDefaultButton]::Button2
     )
+    Write-RunnerStage ("OVERVIEW returned {0}" -f $answer)
     if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) {
         Complete-RunReport -Status 'CANCELLED' -Details 'Precheck passed, but the user declined final execution confirmation.'
         exit 2
@@ -613,6 +769,7 @@ Continue?
     Write-RunReport '[USER CONFIRMATION]'
     Write-RunReport ("Confirmed: {0}" -f (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))
 
+    Write-RunnerStage 'EXECUTION user confirmed; starting backup SQL'
     $backupResult = Invoke-PsqlScript -SqlPath $backupSql -StepName 'STEP 1 - BACKUP'
     if ($backupResult.ExitCode -ne 0) {
         Complete-RunReport -Status 'FAILED' -Details "Backup failed. No customer script was executed. Exit code: $($backupResult.ExitCode)"
@@ -638,6 +795,7 @@ Continue?
 }
 catch {
     $message = $_.Exception.Message
+    Write-RunnerStage ("ERROR exception type={0}; see execution report for details" -f $_.Exception.GetType().FullName)
     Complete-RunReport -Status 'FAILED' -Details $message
     Write-Host ''
     Write-Host "ERROR: $message" -ForegroundColor Red
@@ -655,6 +813,11 @@ finally {
     }
     if ($passwordSetByRunner) {
         Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
+    }
+    Write-RunnerStage 'EXIT cleanup completed'
+    if ($null -ne $script:DiagnosticWriter) {
+        $script:DiagnosticWriter.Dispose()
+        $script:DiagnosticWriter = $null
     }
 }
 

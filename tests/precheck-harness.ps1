@@ -10,6 +10,7 @@ Invoke-Expression $functionAst.Extent.Text
 Add-Type 'namespace System.Windows.Forms { public static class Application { public static void DoEvents() {} } }'
 $script:messages = [System.Collections.Generic.List[string]]::new()
 function Write-RunReport { param([string]$Text = '') $script:messages.Add($Text) }
+function Write-RunnerStage { param([string]$Stage) $script:messages.Add($Stage) }
 $PsqlExe = $env:IMPF_TEST_MOCK
 $DbHost = 'host with spaces'
 $DbPort = '5026'

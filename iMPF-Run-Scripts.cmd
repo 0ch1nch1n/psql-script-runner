@@ -1,6 +1,6 @@
 @echo off
 setlocal DisableDelayedExpansion
-title PostgreSQL Multi-Script Change Runner v5.1
+title PostgreSQL Multi-Script Change Runner v5.2
 
 rem ================= PostgreSQL settings =================
 set "PG_PSQL_EXE=C:\Program Files\PostgreSQL\16\bin\psql.exe"
