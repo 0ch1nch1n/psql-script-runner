@@ -1,71 +1,31 @@
 # iMPF Script Runner v5.3
 
-Windows 下的 PostgreSQL 多脚本执行工具。先选择一个备份 SQL，再选择客户 SQL、调整顺序、输入密码；连接预检成功后显示总览，点击 **Yes** 才开始执行。
+在 Windows 上按顺序执行多个 PostgreSQL SQL 脚本。
 
-## v5.2 修复
+## 使用方法
 
-v5.2 针对“输入密码后没有任何预检输出”的情况，将 Windows ConsoleHost 的 `Get-Credential` 提示替换为本工具的 WinForms 密码窗口。当前现场日志只有执行顺序，没有预检标记；还不能确定是密码提示返回、凭据交接还是第一次控制台写入阻塞。此次修改同时提供独立阶段日志，便于区分这些情况。
+1. 准备 Windows PowerShell 5.1 和 PostgreSQL 的 `psql.exe`。也可使用 pgAdmin 附带的 `psql.exe`。
+2. [下载 v5.3 ZIP](https://github.com/0ch1nch1n/impf-script-runner/releases/download/v5.3/iMPF-Script-Runner-v5.3.zip) 并解压，确保 `iMPF-Run-Scripts.cmd` 和 `iMPF-Run-Scripts.ps1` 在同一目录。
+3. 编辑 CMD 顶部的 `PG_PSQL_EXE`、`PG_HOST`、`PG_PORT`、`PG_DATABASE` 和 `PG_USERNAME`。保留 `PG_PASSWORD` 为空，运行时在弹窗中输入密码。
+4. 双击 CMD，先选备份 SQL，再选客户 SQL 并调整顺序。连接预检通过后，核对目标库、执行顺序和编码结果，再点 **Yes**。
 
-- 启动窗口、密码窗口及运行报告标明 v5.2，启动日志记录实际 PS1 路径。
-- 从启动到密码窗口、密码交接、预检与总览，逐步记录到本地 `%LOCALAPPDATA%\iMPF\Logs\iMPF_Startup_*.log`；LOCALAPPDATA 不可写时回退到 `%TEMP%\iMPF\Logs`。
-- 关键阶段先写本地日志，再写控制台；密码不写入阶段日志。
-- 增加独立密码窗口测试 `Test-iMPF-PasswordDialog.cmd`，仅测试窗口开关，输入任意测试密码即可，不连接数据库、不运行 SQL。
+**跳过实际备份**时，将内容为 `SELECT 1;` 的 UTF-8 文件 `skip_backup.sql` 选为备份脚本。Runner 会先执行这条只读语句。在备份选择窗口点 **Cancel** 会取消整批。
 
-v5 在输入密码后同步等待连接预检进程返回，没有显式超时，可能长时间停在总览之前。v5.1 为这一步增加了：
+**从旧版升级**时，可以保留现有 CMD 的连接配置，在 `PG_USERNAME` 下方加入 `set "PGCLIENTENCODING=UTF8"`，再替换为新版 PS1。
 
-- 每个地址 10 秒的连接超时，以及整个预检 30 秒的等待上限。
-- 每 5 秒在窗口和运行报告中显示等待进度。
-- 禁止预检再次提示输入密码，关闭分页并关闭预检的标准输入。
-- 并发读取标准输出与错误输出，超时后终止预检。
+## 功能边界
 
-30 秒限制仅适用于只读连接预检。备份和客户 SQL 沿用原有执行流程，不设置这个运行时限。连接阶段为什么等待，仍需根据实际网络与认证错误排查。
+- **编码**：备份与客户 SQL 都必须是有效的 UTF-8，支持带 BOM 和不带 BOM。总览及运行报告逐个显示结果。任一文件无法读取或未通过检查，整批停止。
+- **连接预检**：使用只读查询，最长等待 30 秒。失败或超时会阻止整批执行。这个时限仅适用于预检。
+- **执行与事务**：每个脚本在独立的 `psql` 会话中运行，使用 `-1` 请求单事务执行，并设置 `ON_ERROR_STOP=1`。备份脚本成功后才执行客户 SQL。遇错停止后续步骤，已提交的前序脚本不会自动回滚。脚本自带事务控制或包含事务内不支持的命令时，需要提前审核。
+- **日志**：同名脚本 `.log` 会被覆盖。`PostgreSQL_Run_*.log` 写在备份 SQL 所在目录，运行报告不记录密码。
 
-## 使用
+## 版本更新
 
-1. 安装 Windows PowerShell 5.1 和 PostgreSQL `psql.exe`（也可以使用 pgAdmin 附带的版本）。
-2. 将 `iMPF-Run-Scripts.cmd`、`iMPF-Run-Scripts.ps1` 放在同一目录。
-3. 编辑 CMD 顶部的 `PG_PSQL_EXE`、`PG_HOST`、`PG_PORT`、`PG_DATABASE` 和 `PG_USERNAME`。仓库中提供的是占位配置。
-4. 保持 `PG_PASSWORD` 为空，运行时通过密码对话框输入。
-5. 双击 CMD，选择备份与客户脚本并调整顺序；核对预检总览后点击 Yes。
+| 版本 | 主要变更 |
+| --- | --- |
+| [v5.3](https://github.com/0ch1nch1n/impf-script-runner/releases/tag/v5.3) | 设置 `psql` 客户端编码为 UTF-8，增加执行前逐文件检查。 |
+| v5.2 | 改用 WinForms 密码窗口，增加本地启动阶段日志。 |
+| v5.1 | 为连接预检增加 30 秒总时限和等待进度。 |
 
-CMD 通过 `PGCLIENTENCODING=UTF8` 设置 psql 客户端编码。总览和运行报告会逐个列出备份与客户 SQL 的 UTF-8 检查结果，支持带 BOM 和不带 BOM 的 UTF-8。如果有文件无法读取或未通过检查，整批脚本会在执行前停止。遇到编码错误时，请将对应文件另存为 UTF-8 后重新运行。
-
-### 本次不需要备份时
-
-Runner 要求第一步选择一个 SQL 文件。在备份选择窗口点 **Cancel** 会结束整次运行。可以用只读 SQL 文件占位。
-
-1. 在本批客户脚本所在目录新建 `skip_backup.sql`，写入以下内容。
-
-   ```sql
-   -- 本次不执行备份
-   SELECT 1;
-   ```
-
-2. 第一步选择 `skip_backup.sql`，第二步选择实际要执行的客户脚本并调整顺序。
-3. 连接预检通过后，确认执行总览中的 `BACKUP` 一行指向 `skip_backup.sql`，再点 **Yes**。
-
-工具会先执行 `SELECT 1`。这条语句不会修改数据或创建备份。占位脚本成功后，工具会按顺序执行客户脚本。运行报告仍将第一步标为 `BACKUP`，并写在 `skip_backup.sql` 所在目录。
-
-从旧版升级时，先备份旧文件。如果保留现有 CMD 及连接配置，请替换 PS1，并在 CMD 的 `PG_USERNAME` 设置下方补上 `set "PGCLIENTENCODING=UTF8"`。新版 PS1 启动后，主窗口和密码窗口标题应显示 v5.3。
-
-如果仍无响应，先查看本地启动日志的最后几行。`PASSWORD_DIALOG returned` 表示密码窗口已返回；`PASSWORD ready` 表示密码交接完成；`PRECHECK entered` 表示已进入预检；`PRECHECK console status written` 表示首次控制台输出已完成。请勿把整个环境变量或密码贴入反馈。
-
-## 执行与日志
-
-- 每个脚本使用独立 `psql` 会话，以 `-1` 请求单事务执行，并设置 `ON_ERROR_STOP=1`。脚本自带的事务控制及不支持事务的语句需要自行审核。
-- 备份成功才运行客户脚本，任何一步失败后停止后续步骤；已经成功提交的前序脚本不会自动回滚。
-- 每个脚本的同名 `.log` 会被覆盖；整体报告 `PostgreSQL_Run_*.log` 写在备份 SQL 所在目录。
-- 密码不写入运行报告，运行时通过进程环境传给 psql。
-- 预检失败或超时，所选备份和客户 SQL 均不启动。
-
-## 验证
-
-已在 Linux、PowerShell 7.6.7 中使用模拟进程验证成功返回、认证失败、异常结果、数据库不匹配、大量双流输出、30 秒超时和进程清理，并对实际启动控制流程模拟密码取消、预检失败、总览拒绝和确认，检查本地阶段日志及执行门槛。测试不会连接数据库，模拟测试不验证真实密码窗口。v5.3 的模拟测试另外覆盖了带 BOM 和不带 BOM 的 UTF-8，以及 GBK、UTF-16、截断字节和文件缺失。Windows PowerShell 5.1 界面、Windows 参数传递及真实数据库连接仍需本机验收；可以先运行独立密码窗口测试。
-
-Linux/macOS 中安装 Python 3 和 PowerShell 后运行：
-
-```sh
-python3 tests/run_precheck_tests.py
-```
-
-可通过 `--pwsh /path/to/pwsh` 指定 PowerShell 启动器。测试中的模拟可执行文件使用 POSIX shebang，不作为 Windows 自动化验收。
+[完整更新日志](CHANGELOG.md)
