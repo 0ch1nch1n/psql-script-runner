@@ -2,7 +2,7 @@
 $ErrorActionPreference = 'Stop'
 $script:RunnerVersion = '5.3'
 $script:DiagnosticWriter = $null
-$runner = Join-Path (Split-Path -Parent $PSScriptRoot) 'iMPF-Run-Scripts.ps1'
+$runner = Join-Path (Split-Path -Parent $PSScriptRoot) 'psql-Run-Scripts.ps1'
 $tokens = $null
 $errors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($runner, [ref]$tokens, [ref]$errors)

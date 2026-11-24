@@ -16,7 +16,7 @@ assert os.environ['PGPASSWORD'] == 'mock-only-secret'
 assert sys.stdin.read() == ''
 mode = os.environ['MOCK_MODE']
 if mode == 'hang':
-    Path(os.environ['IMPF_TEST_PID']).write_text(str(os.getpid()))
+    Path(os.environ['PSQL_TEST_PID']).write_text(str(os.getpid()))
     time.sleep(120)
 elif mode == 'auth-fail':
     print('FATAL: password authentication failed', file=sys.stderr)

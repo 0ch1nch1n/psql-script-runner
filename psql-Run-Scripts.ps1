@@ -14,9 +14,9 @@ function Initialize-RunnerDiagnostics {
     foreach ($root in $roots) {
         if ([string]::IsNullOrWhiteSpace($root)) { continue }
         try {
-            $directory = Join-Path $root 'iMPF\Logs'
+            $directory = Join-Path $root 'psql\Logs'
             [void][IO.Directory]::CreateDirectory($directory)
-            $name = 'iMPF_Startup_{0}_{1}.log' -f (Get-Date -Format 'yyyyMMdd_HHmmss_fff'), $PID
+            $name = 'psql_Startup_{0}_{1}.log' -f (Get-Date -Format 'yyyyMMdd_HHmmss_fff'), $PID
             $path = Join-Path $directory $name
             $encoding = New-Object System.Text.UTF8Encoding($true)
             $script:DiagnosticWriter = New-Object System.IO.StreamWriter($path, $false, $encoding)
@@ -64,7 +64,7 @@ function Get-RunnerCredential {
     # Avoid ConsoleHost's native Get-Credential prompt after WinForms dialogs.
     Write-RunnerStage 'PASSWORD_DIALOG creating WinForms controls'
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = "iMPF v$script:RunnerVersion - PostgreSQL password"
+    $form.Text = "PSQL Script Runner v$script:RunnerVersion - PostgreSQL password"
     $form.StartPosition = 'CenterScreen'
     $form.ClientSize = New-Object System.Drawing.Size(490, 200)
     $form.FormBorderStyle = 'FixedDialog'
@@ -641,8 +641,8 @@ $openSqlScripts = [System.Collections.Generic.List[IO.FileStream]]::new()
 
 try {
     Write-RunnerStage 'STARTUP writing console banner'
-    $Host.UI.RawUI.WindowTitle = "PostgreSQL Multi-Script Change Runner v$script:RunnerVersion"
-    Write-Host "iMPF Script Runner v$script:RunnerVersion" -ForegroundColor Cyan
+    $Host.UI.RawUI.WindowTitle = "PSQL Script Runner v$script:RunnerVersion"
+    Write-Host "PSQL Script Runner v$script:RunnerVersion" -ForegroundColor Cyan
     Write-Host ("Script: {0}" -f $PSCommandPath)
     Write-Host ("Local diagnostics: {0}" -f $script:DiagnosticPath)
     Write-RunnerStage 'STARTUP console banner written; validating settings'

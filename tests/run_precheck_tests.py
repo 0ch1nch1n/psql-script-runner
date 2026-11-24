@@ -17,16 +17,16 @@ def main():
     if pwsh is None:
         parser.error('PowerShell was not found; specify --pwsh /path/to/pwsh.')
     root = Path(__file__).resolve().parent.parent
-    with tempfile.TemporaryDirectory(prefix='impf-precheck-') as scratch:
+    with tempfile.TemporaryDirectory(prefix='psql-precheck-') as scratch:
         temp = Path(scratch)
         mock = temp / 'mock psql.py'
         shutil.copyfile(root / 'tests/mock_psql.py', mock)
         mock.chmod(0o700)
         env = os.environ.copy()
         env.update({
-            'IMPF_TEST_RUNNER': str(root / 'iMPF-Run-Scripts.ps1'),
-            'IMPF_TEST_MOCK': str(mock),
-            'IMPF_TEST_PID': str(temp / 'mock.pid'),
+            'PSQL_TEST_RUNNER': str(root / 'psql-Run-Scripts.ps1'),
+            'PSQL_TEST_MOCK': str(mock),
+            'PSQL_TEST_PID': str(temp / 'mock.pid'),
         })
         subprocess.run(
             [pwsh, '-NoLogo', '-NoProfile', '-NonInteractive',
@@ -55,7 +55,7 @@ def main():
             for filename, content in fixtures.items():
                 if content is not None:
                     (flow_root / filename).write_bytes(content)
-            env.update(IMPF_FLOW_ROOT=str(flow_root), IMPF_FLOW_CASE=mode)
+            env.update(PSQL_FLOW_ROOT=str(flow_root), PSQL_FLOW_CASE=mode)
             result = subprocess.run(
                 [pwsh, '-NoLogo', '-NoProfile', '-NonInteractive', '-File',
                  str(root / 'tests/startup-harness.ps1')],
@@ -64,7 +64,7 @@ def main():
             if result.returncode != expected_code:
                 raise AssertionError(f'{mode}: unexpected exit {result.returncode}\n{result.stdout}\n{result.stderr}')
             reports = list(flow_root.glob('PostgreSQL_Run_*.log'))
-            diagnostics = list(flow_root.rglob('iMPF_Startup_*.log'))
+            diagnostics = list(flow_root.rglob('psql_Startup_*.log'))
             assert len(reports) == len(diagnostics) == 1, (mode, reports, diagnostics)
             trace = diagnostics[0].read_text(encoding='utf-8-sig')
             assert 'EXIT cleanup completed' in trace, trace

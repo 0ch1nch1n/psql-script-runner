@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$path = $env:IMPF_TEST_RUNNER
+$path = $env:PSQL_TEST_RUNNER
 $tokens = $null
 $errors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
@@ -11,7 +11,7 @@ Add-Type 'namespace System.Windows.Forms { public static class Application { pub
 $script:messages = [System.Collections.Generic.List[string]]::new()
 function Write-RunReport { param([string]$Text = '') $script:messages.Add($Text) }
 function Write-RunnerStage { param([string]$Stage) $script:messages.Add($Stage) }
-$PsqlExe = $env:IMPF_TEST_MOCK
+$PsqlExe = $env:PSQL_TEST_MOCK
 $DbHost = 'host with spaces'
 $DbPort = '5026'
 $DbName = 'test_db'
@@ -46,7 +46,7 @@ try { $null = Invoke-ConnectionPrecheck } catch { $caught = $_.Exception.Message
 $clock.Stop()
 Assert ($caught -match 'timed out after 30 seconds') 'Missing timeout failure.'
 Assert ($clock.Elapsed.TotalSeconds -ge 30 -and $clock.Elapsed.TotalSeconds -lt 35) 'Timeout was not bounded.'
-$mockPid = [int](Get-Content $env:IMPF_TEST_PID)
+$mockPid = [int](Get-Content $env:PSQL_TEST_PID)
 Assert ($null -eq (Get-Process -Id $mockPid -ErrorAction SilentlyContinue)) 'Timed-out mock process survived.'
 Assert (($script:messages -join "`n") -notmatch 'mock-only-secret') 'Password appeared in report.'
 Write-Host 'PASS: 30-second deadline, process cleanup, no password in report'
