@@ -5,7 +5,7 @@ $tokens = $null
 $errors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$tokens, [ref]$errors)
 if ($errors.Count) { throw ($errors | Out-String) }
-foreach ($name in @('Initialize-RunnerDiagnostics', 'Write-RunnerStage', 'Write-RunReport', 'Initialize-RunReport', 'Complete-RunReport')) {
+foreach ($name in @('Initialize-RunnerDiagnostics', 'Write-RunnerStage', 'Write-RunReport', 'Initialize-RunReport', 'Complete-RunReport', 'Open-Utf8SqlScript')) {
     $node = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
     Invoke-Expression $node.Extent.Text
 }
@@ -13,11 +13,13 @@ Add-Type @'
 namespace System.Windows.Forms {
     public enum DialogResult { Yes, No }
     public enum MessageBoxButtons { YesNo }
-    public enum MessageBoxIcon { Warning }
+    public enum MessageBoxIcon { Warning, Error }
     public enum MessageBoxDefaultButton { Button2 }
     public static class MessageBox {
         public static DialogResult Show(string text, string title, MessageBoxButtons b,
             MessageBoxIcon i, MessageBoxDefaultButton d) {
+            var root = System.Environment.GetEnvironmentVariable("IMPF_FLOW_ROOT");
+            System.IO.File.WriteAllText(System.IO.Path.Combine(root, "confirmation.txt"), text);
             return System.Environment.GetEnvironmentVariable("IMPF_FLOW_CASE") == "confirm"
                 ? DialogResult.Yes : DialogResult.No;
         }
@@ -61,7 +63,12 @@ function Invoke-PsqlScript {
     Add-Content -LiteralPath (Join-Path $env:IMPF_FLOW_ROOT 'executed.txt') -Value $StepName
     return [pscustomobject]@{ ExitCode=0 }
 }
-function Show-RunnerMessage { param($Text, $Title, $Icon) }
+function Show-RunnerMessage {
+    param($Text, $Title, $Icon)
+    if ($Title -eq 'UTF-8 check failed - execution blocked') {
+        Set-Content -LiteralPath (Join-Path $env:IMPF_FLOW_ROOT 'encoding-blocked.txt') -Value $Text -Encoding UTF8
+    }
+}
 $start = $source.IndexOf('$passwordSetByRunner = $false')
 if ($start -lt 0) { throw 'Main startup block was not found.' }
 Invoke-Expression $source.Substring($start)

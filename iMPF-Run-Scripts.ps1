@@ -535,6 +535,32 @@ function Invoke-ConnectionPrecheck {
     return $result
 }
 
+function Open-Utf8SqlScript {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    # Keep the file open for other readers only until the batch finishes.
+    $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    try {
+        $utf8 = [Text.UTF8Encoding]::new($false, $true)
+        $decoder = $utf8.GetDecoder()
+        $bytes = [byte[]]::new(4096)
+        $characters = [char[]]::new($utf8.GetMaxCharCount($bytes.Length))
+        do {
+            $count = $stream.Read($bytes, 0, $bytes.Length)
+            # Flush at end of file so a truncated multibyte character is rejected.
+            [void]$decoder.GetChars($bytes, 0, $count, $characters, 0, ($count -eq 0))
+            if ([Array]::IndexOf($bytes, [byte]0, 0, $count) -ge 0) {
+                throw [IO.InvalidDataException]::new('File contains a NUL byte.')
+            }
+        } while ($count -gt 0)
+        return $stream
+    }
+    catch {
+        $stream.Dispose()
+        throw
+    }
+}
+
 function Invoke-PsqlScript {
     param(
         [Parameter(Mandatory = $true)][string]$SqlPath,
@@ -611,6 +637,7 @@ function Invoke-PsqlScript {
 }
 
 $passwordSetByRunner = $false
+$openSqlScripts = [System.Collections.Generic.List[IO.FileStream]]::new()
 
 try {
     Write-RunnerStage 'STARTUP writing console banner'
@@ -719,14 +746,33 @@ try {
     $precheck = Invoke-ConnectionPrecheck
     Write-RunnerStage 'PRECHECK passed; building execution overview'
 
-    $orderLines = New-Object System.Collections.Generic.List[string]
-    [void]$orderLines.Add("  1. BACKUP   $backupSql")
-    for ($i = 0; $i -lt $customerScripts.Count; $i++) {
-        [void]$orderLines.Add(("  {0}. CUSTOMER {1}" -f ($i + 2), $customerScripts[$i]))
+    Write-RunnerStage 'SCRIPT_ENCODING checking selected SQL files'
+    Write-RunReport ''
+    Write-RunReport '[SCRIPT ENCODING CHECK]'
+    $orderLines = [System.Collections.Generic.List[string]]::new()
+    for ($i = 0; $i -lt $allScripts.Count; $i++) {
+        $path = [IO.Path]::GetFullPath($allScripts[$i])
+        $role = if ($i -eq 0) { 'BACKUP' } else { 'CUSTOMER' }
+        try {
+            $openSqlScripts.Add((Open-Utf8SqlScript -Path $path))
+            $status = 'UTF-8 OK'
+        }
+        catch [Text.DecoderFallbackException] {
+            $status = 'INVALID UTF-8'
+        }
+        catch {
+            $status = "CHECK FAILED: $($_.Exception.Message)"
+        }
+        $line = "  {0}. {1} [{2}] {3}" -f ($i + 1), $role, $status, $path
+        $orderLines.Add($line)
+        Write-RunReport $line
     }
+    $allScriptsAreUtf8 = $openSqlScripts.Count -eq $allScripts.Count
+    $encodingSummary = if ($allScriptsAreUtf8) { 'PASS (all scripts are valid UTF-8)' } else { 'FAILED (execution blocked)' }
+    Write-RunnerStage ("SCRIPT_ENCODING {0}" -f $encodingSummary)
     $orderText = $orderLines -join "`r`n"
     $passwordMode = if ([string]::IsNullOrWhiteSpace($ConfiguredPassword)) { 'secure prompt or existing environment' } else { 'PG_PASSWORD from CMD' }
-    $confirmation = @"
+    $overview = @"
 Connection precheck: SUCCESS
 Actual database: $($precheck.Database)
 Actual user:     $($precheck.User)
@@ -739,11 +785,22 @@ Configured endpoint:
 Password source:
   $passwordMode
 
+Script encoding check: $encodingSummary
 Execution order:
 $orderText
 
 Run report:
   $reportPath
+"@
+
+    if (-not $allScriptsAreUtf8) {
+        Complete-RunReport -Status 'FAILED' -Details 'Script encoding check failed. No selected SQL scripts were executed.'
+        Show-RunnerMessage -Text $overview -Title 'UTF-8 check failed - execution blocked' -Icon Error
+        exit 1
+    }
+
+    $confirmation = @"
+$overview
 
 Existing same-name script logs will be overwritten.
 Execution stops immediately if any script fails.
@@ -804,6 +861,9 @@ catch {
     exit 1
 }
 finally {
+    foreach ($stream in $openSqlScripts) {
+        $stream.Dispose()
+    }
     if (-not $script:RunReportFinalized -and $null -ne $script:RunReportWriter) {
         Complete-RunReport -Status 'ABORTED' -Details 'The runner ended before a final status was recorded.'
     }
