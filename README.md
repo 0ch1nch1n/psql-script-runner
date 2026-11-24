@@ -9,7 +9,7 @@
 3. 编辑 CMD 顶部的 `PG_PSQL_EXE`、`PG_HOST`、`PG_PORT`、`PG_DATABASE` 和 `PG_USERNAME`。保留 `PG_PASSWORD` 为空，运行时在弹窗中输入密码。
 4. 双击 CMD，先选备份 SQL，再选客户 SQL 并调整顺序。连接预检通过后，核对目标库、执行顺序和编码结果，再点 **Yes**。
 
-**跳过实际备份**时，将内容为 `SELECT 1;` 的 UTF-8 文件 `skip_backup.sql` 选为备份脚本。Runner 会先执行这条只读语句。在备份选择窗口点 **Cancel** 会取消整批。
+**跳过实际备份**时，将内容为 `SELECT 1;` 的 UTF-8 文件 `skip_backup.sql` 选为备份脚本。Runner 会先执行这条只读语句。
 
 **从旧版升级**时，将原 CMD 的连接配置复制到新版 CMD 顶部，然后使用新版 CMD 启动。
 
