@@ -1,5 +1,10 @@
 # Changelog
 
+## 5.4 — 2026-11-24
+
+- 将 Windows 启动器与 PowerShell 主程序合并为 `PSQL-Script-Runner-v5.4.cmd`，连接配置仍在文件顶部。
+- 主程序直接从 CMD 载入，启动日志记录该 CMD 的实际路径。连接预检、UTF-8 检查和执行流程沿用 v5.3。
+
 ## 5.3 — 2026-11-24
 
 - Windows 启动器设置 `PGCLIENTENCODING=UTF8`，让 psql 按 UTF-8 接收脚本内容。

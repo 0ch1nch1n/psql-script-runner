@@ -7,6 +7,26 @@ import subprocess
 import tempfile
 
 
+def check_embedded_loader(pwsh, runner, temp):
+    header, marker, _ = runner.read_text(encoding='utf-8').partition('\n:POWERSHELL_PAYLOAD\n')
+    assert marker and 'exit /b %PG_RUNNER_RC%' in header
+    launch = next(line for line in header.splitlines() if line.startswith('powershell.exe '))
+    command = launch.split(' -Command ', 1)[1]
+    assert command.startswith('"') and command.endswith('"')
+    runner_path = temp / "runner space & apostrophe's.cmd"
+    env = dict(os.environ, PG_RUNNER_SELF=str(runner_path))
+    for code in (0, 1, 2, 3):
+        payload = f'try {{ Write-Output $env:PG_RUNNER_SELF; exit {code} }} finally {{ Write-Output cleanup }}'
+        runner_path.write_bytes((header + marker + payload + '\n').replace('\n', '\r\n').encode('utf-8'))
+        result = subprocess.run(
+            [pwsh, '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command[1:-1]],
+            env=env, capture_output=True, text=True, timeout=15,
+        )
+        assert result.returncode == code, result
+        assert result.stdout.splitlines() == [str(runner_path), 'cleanup'], result
+    print('PASS: embedded launcher, CRLF, path with special characters, and exit codes', flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pwsh', default='pwsh')
@@ -17,14 +37,16 @@ def main():
     if pwsh is None:
         parser.error('PowerShell was not found; specify --pwsh /path/to/pwsh.')
     root = Path(__file__).resolve().parent.parent
+    runner = root / 'PSQL-Script-Runner-v5.4.cmd'
     with tempfile.TemporaryDirectory(prefix='psql-precheck-') as scratch:
         temp = Path(scratch)
+        check_embedded_loader(pwsh, runner, temp)
         mock = temp / 'mock psql.py'
         shutil.copyfile(root / 'tests/mock_psql.py', mock)
         mock.chmod(0o700)
         env = os.environ.copy()
         env.update({
-            'PSQL_TEST_RUNNER': str(root / 'psql-Run-Scripts.ps1'),
+            'PSQL_TEST_RUNNER': str(runner),
             'PSQL_TEST_MOCK': str(mock),
             'PSQL_TEST_PID': str(temp / 'mock.pid'),
         })

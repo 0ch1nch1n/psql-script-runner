@@ -1,10 +1,47 @@
+@echo off
+setlocal DisableDelayedExpansion
+title PSQL Script Runner v5.4
+
+rem ================= PostgreSQL settings =================
+set "PG_PSQL_EXE=C:\Program Files\PostgreSQL\16\bin\psql.exe"
+set "PG_HOST=YOUR_DATABASE_HOST"
+set "PG_PORT=5432"
+set "PG_DATABASE=YOUR_DATABASE_NAME"
+set "PG_USERNAME=YOUR_DATABASE_USER"
+set "PGCLIENTENCODING=UTF8"
+
+rem Leave PG_PASSWORD empty to receive a secure password prompt.
+rem A value entered here is stored as plaintext. In a CMD file, write % as %%.
+set "PG_PASSWORD="
+rem =======================================================
+
+set "PG_RUNNER_SELF=%~f0"
+
+rem Load the PowerShell code after the label below from this same CMD file.
+powershell.exe -NoLogo -NoProfile -Sta -ExecutionPolicy Bypass -Command "$ErrorActionPreference = 'Stop'; $file = [IO.File]::ReadAllText($env:PG_RUNNER_SELF, [Text.UTF8Encoding]::new($false, $true)); $marker = [regex]::Match($file, '(?m)^:POWERSHELL_PAYLOAD\r?$'); if (-not $marker.Success) { throw 'Embedded PowerShell payload was not found.' }; $payload = $file.Substring($marker.Index + $marker.Length); if ([string]::IsNullOrWhiteSpace($payload)) { throw 'Embedded PowerShell payload is empty.' }; & ([scriptblock]::Create($payload)); exit $LASTEXITCODE"
+set "PG_RUNNER_RC=%ERRORLEVEL%"
+
+echo.
+if "%PG_RUNNER_RC%"=="0" (
+    echo All scripts completed successfully.
+) else if "%PG_RUNNER_RC%"=="2" (
+    echo Operation cancelled. No further script was executed.
+) else (
+    echo Execution failed. Exit code: %PG_RUNNER_RC%
+    echo Check the run report and same-name script log.
+)
+echo.
+pause
+exit /b %PG_RUNNER_RC%
+
+:POWERSHELL_PAYLOAD
 # PostgreSQL multi-script runner logic.
-# Configure the connection variables in the matching CMD launcher.
+# Configure the connection variables at the top of this CMD file.
 
 
 $ErrorActionPreference = 'Stop'
 
-$script:RunnerVersion = '5.3'
+$script:RunnerVersion = '5.4'
 $script:DiagnosticWriter = $null
 $script:DiagnosticPath = $null
 
@@ -39,7 +76,7 @@ function Write-RunnerStage {
 
 Initialize-RunnerDiagnostics
 Write-RunnerStage ("START version={0}; pid={1}; PowerShell={2}; apartment={3}" -f $script:RunnerVersion, $PID, $PSVersionTable.PSVersion, [Threading.Thread]::CurrentThread.GetApartmentState())
-Write-RunnerStage ("SCRIPT {0}" -f $PSCommandPath)
+Write-RunnerStage ("SCRIPT {0}" -f $env:PG_RUNNER_SELF)
 
 $PsqlExe = $env:PG_PSQL_EXE
 $DbHost  = $env:PG_HOST
@@ -643,7 +680,7 @@ try {
     Write-RunnerStage 'STARTUP writing console banner'
     $Host.UI.RawUI.WindowTitle = "PSQL Script Runner v$script:RunnerVersion"
     Write-Host "PSQL Script Runner v$script:RunnerVersion" -ForegroundColor Cyan
-    Write-Host ("Script: {0}" -f $PSCommandPath)
+    Write-Host ("Script: {0}" -f $env:PG_RUNNER_SELF)
     Write-Host ("Local diagnostics: {0}" -f $script:DiagnosticPath)
     Write-RunnerStage 'STARTUP console banner written; validating settings'
     $requiredSettings = [ordered]@{

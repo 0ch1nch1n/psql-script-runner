@@ -1,8 +1,9 @@
 $ErrorActionPreference = 'Stop'
 $path = $env:PSQL_TEST_RUNNER
+$source = & (Join-Path $PSScriptRoot 'read-runner-source.ps1') -Path $path
 $tokens = $null
 $errors = $null
-$ast = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
+$ast = [System.Management.Automation.Language.Parser]::ParseInput($source, $path, [ref]$tokens, [ref]$errors)
 if ($errors.Count) { throw ($errors | Out-String) }
 $functionAst = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-ConnectionPrecheck' }, $true)
 # Extract only the function: never run the actual UI or database scripts.

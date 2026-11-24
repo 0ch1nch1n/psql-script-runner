@@ -1,11 +1,12 @@
 # Interactive Windows smoke check. Never connects to a database or runs SQL.
 $ErrorActionPreference = 'Stop'
-$script:RunnerVersion = '5.3'
+$script:RunnerVersion = '5.4'
 $script:DiagnosticWriter = $null
-$runner = Join-Path (Split-Path -Parent $PSScriptRoot) 'psql-Run-Scripts.ps1'
+$runner = Join-Path (Split-Path -Parent $PSScriptRoot) 'PSQL-Script-Runner-v5.4.cmd'
+$source = & (Join-Path $PSScriptRoot 'read-runner-source.ps1') -Path $runner
 $tokens = $null
 $errors = $null
-$ast = [System.Management.Automation.Language.Parser]::ParseFile($runner, [ref]$tokens, [ref]$errors)
+$ast = [System.Management.Automation.Language.Parser]::ParseInput($source, $runner, [ref]$tokens, [ref]$errors)
 if ($errors.Count) { throw ($errors | Out-String) }
 foreach ($name in @('Initialize-RunnerDiagnostics', 'Write-RunnerStage', 'Get-RunnerCredential')) {
     $node = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)

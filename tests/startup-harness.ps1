@@ -1,6 +1,6 @@
 # Simulate modal outcomes around the actual top-level startup flow. No DB or GUI.
 $ErrorActionPreference = 'Stop'
-$source = Get-Content -LiteralPath $env:PSQL_TEST_RUNNER -Raw
+$source = & (Join-Path $PSScriptRoot 'read-runner-source.ps1') -Path $env:PSQL_TEST_RUNNER
 $tokens = $null
 $errors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$tokens, [ref]$errors)
@@ -26,7 +26,7 @@ namespace System.Windows.Forms {
     }
 }
 '@
-$script:RunnerVersion = '5.3'
+$script:RunnerVersion = '5.4'
 $script:DiagnosticWriter = $null
 $script:RunReportWriter = $null
 $script:RunReportFinalized = $false
