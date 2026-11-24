@@ -1,8 +1,8 @@
-# iMPF Script Runner v5.2
+# iMPF Script Runner v5.3
 
 Windows 下的 PostgreSQL 多脚本执行工具。先选择一个备份 SQL，再选择客户 SQL、调整顺序、输入密码；连接预检成功后显示总览，点击 **Yes** 才开始执行。
 
-## 本版修复
+## v5.2 修复
 
 v5.2 针对“输入密码后没有任何预检输出”的情况，将 Windows ConsoleHost 的 `Get-Credential` 提示替换为本工具的 WinForms 密码窗口。当前现场日志只有执行顺序，没有预检标记；还不能确定是密码提示返回、凭据交接还是第一次控制台写入阻塞。此次修改同时提供独立阶段日志，便于区分这些情况。
 
@@ -32,7 +32,7 @@ CMD 通过 `PGCLIENTENCODING=UTF8` 设置 psql 客户端编码。总览和运行
 
 ### 本次不需要备份时
 
-v5.2 要求第一步选择一个 SQL 文件。在备份选择窗口点 **Cancel** 会结束整次运行。可以用只读 SQL 文件占位。
+Runner 要求第一步选择一个 SQL 文件。在备份选择窗口点 **Cancel** 会结束整次运行。可以用只读 SQL 文件占位。
 
 1. 在本批客户脚本所在目录新建 `skip_backup.sql`，写入以下内容。
 
@@ -46,7 +46,7 @@ v5.2 要求第一步选择一个 SQL 文件。在备份选择窗口点 **Cancel*
 
 工具会先执行 `SELECT 1`。这条语句不会修改数据或创建备份。占位脚本成功后，工具会按顺序执行客户脚本。运行报告仍将第一步标为 `BACKUP`，并写在 `skip_backup.sql` 所在目录。
 
-从旧版升级时，先备份旧文件。如果保留现有 CMD 及连接配置，请替换 PS1，并在 CMD 的 `PG_USERNAME` 设置下方补上 `set "PGCLIENTENCODING=UTF8"`。v5.2 的 PS1 会自行更新窗口标题；密码窗口标题也应出现 v5.2。
+从旧版升级时，先备份旧文件。如果保留现有 CMD 及连接配置，请替换 PS1，并在 CMD 的 `PG_USERNAME` 设置下方补上 `set "PGCLIENTENCODING=UTF8"`。新版 PS1 启动后，主窗口和密码窗口标题应显示 v5.3。
 
 如果仍无响应，先查看本地启动日志的最后几行。`PASSWORD_DIALOG returned` 表示密码窗口已返回；`PASSWORD ready` 表示密码交接完成；`PRECHECK entered` 表示已进入预检；`PRECHECK console status written` 表示首次控制台输出已完成。请勿把整个环境变量或密码贴入反馈。
 
@@ -60,7 +60,7 @@ v5.2 要求第一步选择一个 SQL 文件。在备份选择窗口点 **Cancel*
 
 ## 验证
 
-已在 Linux、PowerShell 7.6.7 中使用模拟进程验证成功返回、认证失败、异常结果、数据库不匹配、大量双流输出、30 秒超时和进程清理，并对实际启动控制流程模拟密码取消、预检失败、总览拒绝和确认，检查本地阶段日志及执行门槛。测试不会连接数据库，模拟测试不验证真实密码窗口。Windows PowerShell 5.1 界面、Windows 参数传递及真实数据库连接仍需本机验收；可以先运行独立密码窗口测试。
+已在 Linux、PowerShell 7.6.7 中使用模拟进程验证成功返回、认证失败、异常结果、数据库不匹配、大量双流输出、30 秒超时和进程清理，并对实际启动控制流程模拟密码取消、预检失败、总览拒绝和确认，检查本地阶段日志及执行门槛。测试不会连接数据库，模拟测试不验证真实密码窗口。v5.3 的模拟测试另外覆盖了带 BOM 和不带 BOM 的 UTF-8，以及 GBK、UTF-16、截断字节和文件缺失。Windows PowerShell 5.1 界面、Windows 参数传递及真实数据库连接仍需本机验收；可以先运行独立密码窗口测试。
 
 Linux/macOS 中安装 Python 3 和 PowerShell 后运行：
 

@@ -26,7 +26,7 @@ namespace System.Windows.Forms {
     }
 }
 '@
-$script:RunnerVersion = '5.2'
+$script:RunnerVersion = '5.3'
 $script:DiagnosticWriter = $null
 $script:RunReportWriter = $null
 $script:RunReportFinalized = $false

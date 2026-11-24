@@ -4,7 +4,7 @@
 
 $ErrorActionPreference = 'Stop'
 
-$script:RunnerVersion = '5.2'
+$script:RunnerVersion = '5.3'
 $script:DiagnosticWriter = $null
 $script:DiagnosticPath = $null
 
