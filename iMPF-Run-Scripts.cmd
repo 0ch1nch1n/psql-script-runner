@@ -1,6 +1,6 @@
 @echo off
 setlocal DisableDelayedExpansion
-title PostgreSQL Multi-Script Change Runner v5.2
+title PostgreSQL Multi-Script Change Runner v5.3
 
 rem ================= PostgreSQL settings =================
 set "PG_PSQL_EXE=C:\Program Files\PostgreSQL\16\bin\psql.exe"
@@ -8,6 +8,7 @@ set "PG_HOST=YOUR_DATABASE_HOST"
 set "PG_PORT=5432"
 set "PG_DATABASE=YOUR_DATABASE_NAME"
 set "PG_USERNAME=YOUR_DATABASE_USER"
+set "PGCLIENTENCODING=UTF8"
 
 rem Leave PG_PASSWORD empty to receive a secure password prompt.
 rem A value entered here is stored as plaintext. In a CMD file, write % as %%.

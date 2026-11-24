@@ -1,6 +1,6 @@
 # Interactive Windows smoke check. Never connects to a database or runs SQL.
 $ErrorActionPreference = 'Stop'
-$script:RunnerVersion = '5.2'
+$script:RunnerVersion = '5.3'
 $script:DiagnosticWriter = $null
 $runner = Join-Path (Split-Path -Parent $PSScriptRoot) 'iMPF-Run-Scripts.ps1'
 $tokens = $null
